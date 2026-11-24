@@ -68,4 +68,4 @@ cargo build --release --locked --manifest-path bridge/Cargo.toml
 
 橋接程式預設只監聽本機，並限制已設定的擴充功能來源。擴充功能傳送建議所需的牌局訊息，不轉送登入憑證；當前牌局歷史只保留於記憶體。原始碼套件排除本機設定、瀏覽器資料、模型、執行環境及建置產物。
 
-第三方資訊見 [THIRD_PARTY.md](THIRD_PARTY.md) 及 [Mortal/LICENSE](Mortal/LICENSE)。Mortal 程式碼使用 AGPL-3.0-or-later。專案原創程式授權尚未指定；公開前應確認授權及模型來源與再分發權。
+專案原創程式碼採用 **AGPL-3.0-or-later**，詳見 [LICENSE](LICENSE)。隨附 Mortal 程式碼亦採用 AGPL-3.0-or-later。其他第三方材料與聲明見 [THIRD_PARTY.md](THIRD_PARTY.md)。此原始碼儲存庫不包含 ONNX 模型，模型來源及再分發權需另行確認。

@@ -94,9 +94,10 @@ needed for recommendations; it does not forward login tokens. Current-round
 history is retained in memory for recovery. Local settings, browser profiles,
 model weights, runtimes and build outputs are excluded from the source package.
 
-## Attribution and publishing
+## License and attribution
 
-See [THIRD_PARTY.md](THIRD_PARTY.md) and [Mortal/LICENSE](Mortal/LICENSE).
-The included Mortal code is AGPL-3.0-or-later. The owner has not yet specified
-licensing for the project's original files. Before publishing, establish the
-appropriate license and verify the model's origin and redistribution rights.
+The project's original source code is licensed under **AGPL-3.0-or-later**;
+see [LICENSE](LICENSE). The included Mortal code also uses AGPL-3.0-or-later.
+See [THIRD_PARTY.md](THIRD_PARTY.md) for third-party materials and their notices.
+The ONNX model is not included in this source repository; verify its origin and
+redistribution rights separately.

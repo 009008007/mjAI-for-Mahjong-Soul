@@ -68,4 +68,4 @@ cargo build --release --locked --manifest-path bridge/Cargo.toml
 
 桥接程序默认只监听本机，并限制已设置的扩展程序来源。扩展程序传送建议所需的牌局消息，不转发登录凭证；当前牌局历史只保留在内存。源码套件排除本地设置、浏览器资料、模型、运行环境及构建产物。
 
-第三方信息见 [THIRD_PARTY.md](THIRD_PARTY.md) 及 [Mortal/LICENSE](Mortal/LICENSE)。Mortal 代码使用 AGPL-3.0-or-later。项目原创程序许可尚未指定；公开前应确认许可及模型来源与再分发权。
+项目原创代码采用 **AGPL-3.0-or-later**，详见 [LICENSE](LICENSE)。随附 Mortal 代码也采用 AGPL-3.0-or-later。其他第三方材料及声明见 [THIRD_PARTY.md](THIRD_PARTY.md)。此源码仓库不包含 ONNX 模型，模型来源及再分发权需另行确认。
