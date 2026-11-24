@@ -12,6 +12,12 @@ portable package is intended for end users; see its setup guide.
 The macOS launcher source and [macOS package guide](docs/macos.md) are included;
 the launcher needs the separately supplied model and runtime files.
 
+## Download and play
+
+Download the macOS or Windows portable package from the repository Releases page after a release is published. Extract the entire folder, then double-click `Start-mjai.command` on macOS or `Start-mjai.bat` on Windows. Choose **1** and select a model or import an ONNX file by dragging it into the terminal. Follow the Chrome extension prompts. Rust commands below are for developers building from source.
+
+The source-code ZIP does not contain the bundled model, bridge or runtime.
+
 ## Features
 
 - Suggestions and optional green outlines for discards and action buttons.
@@ -25,7 +31,7 @@ CallManiac checks for plausible open-hand yaku routes; its early-hand guard is
 conservative and cannot guarantee a future win. Suji is a risk estimate, not a
 guarantee of safety. Highlight positions are estimated and may need adjustment.
 
-## Build and test on macOS
+## Developer build and test on macOS
 
 The source was tested on Apple Silicon macOS with Rust/Cargo 1.99 and Python
 3.8 development libraries. A Rust toolchain, Python headers and Cargo

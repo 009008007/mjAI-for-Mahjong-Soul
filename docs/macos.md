@@ -55,3 +55,7 @@ CallManiac's early-hand guard recognizes yakuhai, tanyao and flush routes. It is
 The included bridge is the user's existing Rust project and model, repackaged. The original build used Rust/Cargo **1.99.0**; Rust source and `Cargo.lock` are included under `bridge/` and `Mortal/` for developers. Rebuilding requires a compatible Rust toolchain, Python development installation and Cargo dependencies; the prebuilt executable is the normal route. ONNX Runtime **1.22.0** and the supplied model are included. The model's provenance and license were not specified in the supplied files. Third-party notices are included with their components.
 
 The extension sends the game's relevant action and reconnect messages to the local bridge. It calculates the seat in the game page; login tokens are not forwarded. It retains the current round only in memory for reconnect recovery. The default listener is `127.0.0.1:23410` and accepts the configured Chrome extension origin.
+
+## Choose or import a model
+
+Choose 1, then select a model by number or press Enter to use the last selection. Choose A to import: drag an ONNX file into the terminal and press Enter. The launcher tests compatibility and stores a copy in `model/imported/`. It preserves existing models and remembers your choice. Select Q to return. Only self-contained compatible Mortal v4 ONNX models are supported.

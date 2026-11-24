@@ -6,6 +6,12 @@ mjai 是雀魂的唯讀輔助工具。Chrome 擴充功能讀取支援的牌局�
 
 此資料夾為原始碼套件，不含模型、ONNX Runtime、Python、已編譯橋接程式、Chrome 個人資料或已儲存的擴充功能 ID。一般使用者請參閱另行提供的 portable 套件。macOS 啟動器原始碼及[套件指南](docs/macos.zh-Hant.md)也包含在內。
 
+## 下載並使用
+
+發行版發布後，從 GitHub Releases 下載 macOS 或 Windows portable 套件並完整解壓。macOS 按兩下 `Start-mjai.command`，Windows 按兩下 `Start-mjai.bat`。選擇 **1**，選擇模型或把 ONNX 模型拖入終端機匯入，再依提示設定 Chrome 擴充功能。下方 Rust 指令供開發者從原始碼建置。
+
+GitHub 原始碼 ZIP 不含隨附模型、橋接程式或執行環境。
+
 ## 功能
 
 - 切牌與操作按鈕建議及綠框。
@@ -17,7 +23,7 @@ mjai 是雀魂的唯讀輔助工具。Chrome 擴充功能讀取支援的牌局�
 
 CallManiac 的役種路線判斷較保守，無法保證和牌。筋牌是風險估計；高亮位置可能需要調整。
 
-## macOS 建置和測試
+## 開發者：macOS 建置和測試
 
 原始碼曾在 Apple Silicon macOS、Rust/Cargo 1.99 和 Python 3.8 開發函式庫上測試。建置需要 Rust、Python 標頭和 Cargo 依賴。實際推論需要模型與 ONNX Runtime。
 

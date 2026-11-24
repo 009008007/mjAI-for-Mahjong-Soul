@@ -29,3 +29,7 @@ Choose Default, CallManiac or SuperTurtle under AI style. Intensity ranges from 
 ## Troubleshooting
 
 If the HUD is missing, enable the extension in the same Chrome profile, leave the launcher running and refresh the game. If the game state is incomplete, refresh to request recovery or wait for a new round. If the package moves or the Chrome profile changes, reload the extension and use launcher option 2. To apply updated extension files, reload the extension and refresh the game. The HUD displays advice only.
+
+## Choose or import a model
+
+Choose 1, then select a model by number or press Enter to use the last selection. Choose A to import: drag an ONNX file into the terminal and press Enter. The launcher tests compatibility and stores a copy in `model/imported/`. It preserves existing models and remembers your choice. Select Q to return. Only self-contained compatible Mortal v4 ONNX models are supported.

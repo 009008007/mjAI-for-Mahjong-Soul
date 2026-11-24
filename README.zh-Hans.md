@@ -6,6 +6,12 @@ mjai 是雀魂的只读辅助工具。Chrome 扩展程序读取支持的牌局�
 
 此文件夹为源码套件，不含模型、ONNX Runtime、Python、已编译桥接程序、Chrome 个人资料或已保存的扩展程序 ID。普通用户请参阅另行提供的 portable 套件。macOS 启动器源码及[套件指南](docs/macos.zh-Hans.md)也包含在内。
 
+## 下载并使用
+
+发行版发布后，从 GitHub Releases 下载 macOS 或 Windows portable 套件并完整解压。macOS 双击 `Start-mjai.command`，Windows 双击 `Start-mjai.bat`。选择 **1**，选择模型或将 ONNX 模型拖入终端导入，再按提示设置 Chrome 扩展程序。下方 Rust 命令供开发者从源码构建。
+
+GitHub 源码 ZIP 不含随附模型、桥接程序或运行环境。
+
 ## 功能
 
 - 切牌与操作按钮建议及绿框。
@@ -17,7 +23,7 @@ mjai 是雀魂的只读辅助工具。Chrome 扩展程序读取支持的牌局�
 
 CallManiac 的役种路线判断较保守，无法保证和牌。筋牌是风险估计；高亮位置可能需要调整。
 
-## macOS 构建和测试
+## 开发者：macOS 构建和测试
 
 源码曾在 Apple Silicon macOS、Rust/Cargo 1.99 和 Python 3.8 开发库上测试。构建需要 Rust、Python 头文件和 Cargo 依赖。实际推理需要模型与 ONNX Runtime。
 

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import model_manager
 
 ROOT = Path(__file__).resolve().parent
 EXTENSION = ROOT / 'extension'
@@ -112,7 +113,6 @@ def path_check():
             print('  If it is installed elsewhere, you can still continue and open it yourself.')
     files = [
         (EXTENSION / 'manifest.json', 'Chrome extension files'),
-        (MODEL, 'AI model'),
         (RUNTIME, 'ONNX Runtime'),
         (BIN, 'Bridge program'),
     ]
@@ -130,17 +130,17 @@ def path_check():
         except (OSError, subprocess.TimeoutExpired) as e:
             say_status(False, 'Bridge starts', str(e))
             ok = False
-    if ok:
+    if ok and MODEL.is_file():
         try:
             print('  Checking AI model…', flush=True)
             result = subprocess.run([str(BIN), '--self-test', '--model', str(MODEL)], env=runtime_env(), capture_output=True, text=True, timeout=90)
             good = result.returncode == 0
             detail = 'loaded successfully' if good else (result.stderr.strip().split('\n')[0] or 'model test failed')
-            say_status(good, 'AI inference', detail)
-            ok = ok and good
+            say_status(good, 'Bundled model', detail)
+            if not good: print('  You can select or import another model in menu 1.')
         except (OSError, subprocess.TimeoutExpired) as e:
-            say_status(False, 'AI inference', str(e))
-            ok = False
+            say_status(False, 'Bundled model', str(e))
+            print('  You can select or import another model in menu 1.')
     if not ok:
         print('\nSome bundled files are missing or the bridge could not start. Keep the folder together and copy the complete portable package again.')
     return ok
@@ -263,7 +263,7 @@ def port_in_use():
     except OSError: return False
 
 
-def start_bridge(ident):
+def start_bridge(ident, model=MODEL):
     if port_in_use():
         print('\nAnother program is already using the bridge port (23410).')
         print('Stop the other bridge first; this launcher will not interrupt it.')
@@ -271,7 +271,7 @@ def start_bridge(ident):
     print('\nBridge starting. Keep this window open while you play.')
     print('In Chrome, open or refresh the Mahjong Soul page, then start a four-player game.')
     print('The HUD will appear in the game. Press Control-C here when you are finished.\n')
-    cmd = [str(BIN), '--model', str(MODEL), '--allow-origin', 'chrome-extension://' + ident]
+    cmd = [str(BIN), '--model', str(model), '--allow-origin', 'chrome-extension://' + ident]
     try:
         proc = subprocess.Popen(cmd, cwd=str(ROOT), env=runtime_env())
     except OSError as e:
@@ -312,8 +312,10 @@ def main():
         print('  4  Quit')
         choice = input('\nChoose [1]: ').strip() or '1'
         if choice == '1':
-            ident = choose_extension(settings)
-            if ident: start_bridge(ident)
+            model = model_manager.choose_model(MODEL.parent, BIN, runtime_env(), settings, save_settings, windows=sys.platform == 'win32')
+            if model:
+                ident = choose_extension(settings)
+                if ident: start_bridge(ident, model)
         elif choice == '2':
             choose_extension(settings, force_prompt=True)
         elif choice == '3':
