@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "mjai HUD",
+  "version": "0.1.0",
+  "description": "Displays read-only suggestions from a local Mahjong Soul bridge.",
+  "minimum_chrome_version": "116",
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://game.maj-soul.com/*",
+        "https://mahjongsoul.game.yo-star.com/*",
+        "https://game.maj-soul.net/*"
+      ],
+      "js": [
+        "hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://game.maj-soul.com/*",
+        "https://mahjongsoul.game.yo-star.com/*",
+        "https://game.maj-soul.net/*"
+      ],
+      "js": [
+        "i18n.js",
+        "highlight.js",
+        "policy-ui.js",
+        "display-settings.js",
+        "panel.js",
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage"
+  ]
+}

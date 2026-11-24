@@ -1,0 +1,1 @@
+`sync_response.bin` contains a synthetic Liqi response wrapper around a historical 32-action `syncGame` sample from Akagi v3: https://github.com/shinkuan/Akagi/blob/v3/src/bridge/majsoul/mod.rs (`SYNC_GAME_SAMPLE`). Its nested action bodies are unmodified plaintext protobuf data. This historical sample does not establish compatibility with the current game server.

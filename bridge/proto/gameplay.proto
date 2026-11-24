@@ -1,0 +1,94 @@
+// Generated gameplay-only subset; unknown protobuf fields are omitted.
+// Source: https://raw.githubusercontent.com/shinkuan/Akagi/v3/src/bridge/majsoul/proto/liqi.proto
+// Source-SHA256: 1c332959d97fc1e86cb2c3eb5df625dec25cc61129bce1f07e5db63d93413502
+// Source is fetched into memory; login/lobby/service definitions are not saved.
+// Presence-only types are intentionally empty; review schema drift before use.
+syntax = "proto3";
+package lq;
+
+message Wrapper {
+  string name = 1;
+  bytes data = 2;
+}
+
+message ActionPrototype {
+  uint32 step = 1;
+  string name = 2;
+  bytes data = 3;
+}
+
+message ActionNewRound {
+  uint32 chang = 1;
+  uint32 ju = 2;
+  uint32 ben = 3;
+  repeated string tiles = 4;
+  string dora = 5;
+  repeated int32 scores = 6;
+  uint32 liqibang = 8;
+  OptionalOperationList operation = 7;
+  repeated string doras = 14;
+  repeated NewRoundOpenedTiles opens = 15;
+  MuyuInfo muyu = 16;
+  uint32 field_spell = 18;
+  YongchangInfo yongchang = 20;
+  XiaKeShangInfo xia_ke_shang = 26;
+}
+
+message NewRoundOpenedTiles {
+  uint32 seat = 1;
+  repeated string tiles = 2;
+  repeated uint32 count = 3;
+}
+
+message LiQiSuccess { uint32 seat = 1; int32 score = 2; uint32 liqibang = 3; bool failed = 4; uint32 liqi_type_beishuizhizhan = 5; XiaKeShangInfo xia_ke_shang = 6; }
+
+message MuyuInfo {}
+
+message YongchangInfo {}
+
+message XiaKeShangInfo {}
+
+message HunZhiYiJiBuffInfo {}
+
+message ActionDealTile {
+  uint32 seat = 1;
+  string tile = 2;
+  uint32 left_tile_count = 3;
+  OptionalOperationList operation = 4;
+  LiQiSuccess liqi = 5;
+  repeated string doras = 6;
+  uint32 tile_state = 9;
+  MuyuInfo muyu = 10;
+  HunZhiYiJiBuffInfo hun_zhi_yi_ji_info = 12;
+}
+
+message ActionDiscardTile {
+  uint32 seat = 1;
+  string tile = 2;
+  bool is_liqi = 3;
+  OptionalOperationList operation = 4;
+  bool moqie = 5;
+  repeated string doras = 8;
+  bool is_wliqi = 9;
+  uint32 tile_state = 10;
+  MuyuInfo muyu = 11;
+  bool revealed = 12;
+  YongchangInfo yongchang = 25;
+  HunZhiYiJiBuffInfo hun_zhi_yi_ji_info = 26;
+  uint32 liqi_type_beishuizhizhan = 27;
+}
+
+message ActionChiPengGang {
+  uint32 seat = 1; uint32 type = 2; repeated string tiles = 3; repeated uint32 froms = 4;
+  LiQiSuccess liqi = 5; OptionalOperationList operation = 6; repeated uint32 tile_states = 9; MuyuInfo muyu = 10; YongchangInfo yongchang = 13; HunZhiYiJiBuffInfo hun_zhi_yi_ji_info = 14;
+}
+message ActionAnGangAddGang {
+  uint32 seat = 1; uint32 type = 2; string tiles = 3; OptionalOperationList operation = 4; repeated string doras = 6; MuyuInfo muyu = 9;
+}
+
+// Only fields needed for state restoration; other game data is ignored.
+message GameRestore { repeated ActionPrototype actions = 2; }
+message GameSyncResponse { bytes error = 1; bool is_end = 2; uint32 step = 3; GameRestore game_restore = 4; }
+
+message OptionalOperation { uint32 type = 1; repeated string combination = 2; }
+message OptionalOperationList { uint32 seat = 1; repeated OptionalOperation operation_list = 2; }
