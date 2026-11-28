@@ -13,6 +13,25 @@ pub fn operation(action: &ActionPrototype) -> Option<OptionalOperationList> {
         _ => None,
     }
 }
+
+pub fn chi_choices(operation: &OptionalOperationList, seat: u8) -> Option<Vec<[String; 2]>> {
+    if operation.seat != u32::from(seat) { return None; }
+    let mut offered = operation.operation_list.iter().filter(|op| op.r#type == 2);
+    let combinations = &offered.next()?.combination;
+    if offered.next().is_some() || !(2..=6).contains(&combinations.len()) { return None; }
+    let mut choices = Vec::with_capacity(combinations.len());
+    for combination in combinations {
+        let (first, second) = combination.split_once('|')?;
+        let mut pair = [
+            crate::converter::majsoul_tile_to_mjai(first).ok()?,
+            crate::converter::majsoul_tile_to_mjai(second).ok()?,
+        ];
+        pair.sort_unstable();
+        if choices.contains(&pair) { return None; }
+        choices.push(pair);
+    }
+    Some(choices)
+}
 /// Indices start at the rightmost button (pass), then proceed left, row by row.
 pub fn button(operation: &OptionalOperationList, seat: u8, recommendation: &str) -> Option<(usize, usize)> {
     if operation.seat != seat as u32 { return None; }
@@ -47,8 +66,23 @@ mod tests {
     use super::*;
     use crate::majsoul_proto::OptionalOperation;
     #[test]
+    fn five_chi_choices_keep_red_and_plain_tiles_distinct() {
+        let mut options = OptionalOperationList { seat: 1, operation_list: vec![OptionalOperation {
+            r#type: 2, combination: ["2s|3s", "3s|5s", "3s|0s", "5s|6s", "0s|6s"].map(String::from).to_vec(),
+        }], ..Default::default()};
+        let choices = chi_choices(&options, 1).unwrap();
+        assert_eq!(choices.len(), 5);
+        assert_eq!(choices[1], ["3s", "5s"]);
+        assert_eq!(choices[2], ["3s", "5sr"]);
+        assert_eq!(choices[4], ["5sr", "6s"]);
+        assert!(chi_choices(&options, 0).is_none());
+        options.operation_list[0].combination[4] = "5s|3s".into();
+        assert!(chi_choices(&options, 1).is_none());
+    }
+
+    #[test]
     fn buttons_use_offered_actions_not_fixed_action_names() {
-        let options = OptionalOperationList { seat: 2, operation_list: [2, 3, 9].into_iter().map(|t| OptionalOperation { r#type:t, combination: vec![] }).collect() };
+        let options = OptionalOperationList { seat: 2, operation_list: [2, 3, 9].into_iter().map(|t| OptionalOperation { r#type:t, combination: vec![] }).collect(), ..Default::default() };
         assert_eq!(button(&options, 2, "none"), Some((0,4)));
         assert_eq!(button(&options, 2, "hora"), Some((1,4)));
         assert_eq!(button(&options, 2, "pon"), Some((2,4)));
@@ -58,14 +92,14 @@ mod tests {
     }
     #[test]
     fn reads_real_operation_field_from_wire_action() {
-        let options = OptionalOperationList { seat: 1, operation_list: vec![OptionalOperation { r#type: 9, combination: vec![] }] };
+        let options = OptionalOperationList { seat: 1, operation_list: vec![OptionalOperation { r#type: 9, combination: vec![] }], ..Default::default() };
         let data = ActionDiscardTile { seat: 0, tile: "1m".into(), operation: Some(options), ..Default::default() };
         let frame = ActionPrototype { step: 1, name: "ActionDiscardTile".into(), data: data.encode_to_vec().into() };
         assert_eq!(button(&operation(&frame).unwrap(), 1, "hora"), Some((1, 2)));
     }
     #[test]
     fn both_kan_types_share_a_button() {
-        let options = OptionalOperationList { seat: 0, operation_list: [1,4,6,7].into_iter().map(|t| OptionalOperation { r#type:t, combination: vec![] }).collect() };
+        let options = OptionalOperationList { seat: 0, operation_list: [1,4,6,7].into_iter().map(|t| OptionalOperation { r#type:t, combination: vec![] }).collect(), ..Default::default() };
         assert_eq!(button(&options, 0, "reach"), Some((1,3)));
         assert_eq!(button(&options, 0, "ankan"), Some((2,3)));
         assert_eq!(button(&options, 0, "kakan"), Some((2,3)));

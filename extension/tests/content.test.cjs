@@ -106,6 +106,13 @@ test('display choices re-render the current advice and clear it on disconnect',(
  assert.ok(String(written.at(-1)).includes('上家多副露'));
  ports[0].onMessage.fire({kind:'suggestion',id:'1',data:{type:'dahai',riichi_threats:1,danger_tiles:[]}});
  assert.ok(written.some(x=>String(x).includes('未達提示門檻')));
+ ports[0].onMessage.fire({kind:'suggestion',id:'1',data:{type:'reach',riichi_discard:'5sr'}});
+ assert.ok(String(written.at(-1)).includes('Riichi discard: 5sr'));
+ ports[0].onMessage.fire({kind:'suggestion',id:'1',data:{type:'chi',pai:'3s',consumed:['1s','2s']}});
+ assert.equal(written.at(-1),'Chi 123 Bamboo\nUse: 1s 2s');
+ ports[0].onMessage.fire({kind:'suggestion',id:'1',data:{type:'chi',pai:'3s',consumed:['5sr','4s'],chi_hand_indices:[9,8],hand_count:13}});
+ assert.equal(written.at(-1),'Chi 345 Bamboo (red five)\nUse: 5sr 4s');
+ assert.equal(marks.at(-1).v.chi_hand_indices.length,2);
  ports[0].onMessage.fire({kind:'connection',id:'1',state:'disconnected'});
  assert.equal(marks.at(-1),'clear');
  displayChange({best:true,danger:true,theme:'pastel'});

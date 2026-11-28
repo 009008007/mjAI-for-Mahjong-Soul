@@ -41,6 +41,24 @@ pub struct Inference {
 }
 
 impl Inference {
+    pub fn current_hand(&self) -> Option<Vec<String>> {
+        let count = self.state.tehai().iter().map(|&n| usize::from(n)).sum::<usize>();
+        Some(sorted_hand(&self.state, count)?.into_iter().map(|tile| tile.to_string()).collect())
+    }
+    pub fn current_draw(&self) -> Option<String> {
+        if self.synthetic_draw { None } else { self.state.last_self_tsumo().map(|tile| tile.to_string()) }
+    }
+    pub fn chi_references(&self, choices: &[[String; 2]], count: usize) -> Option<std::collections::BTreeMap<String, usize>> {
+        if !matches!(count, 4 | 7 | 10 | 13) { return None; }
+        let tiles: Vec<_> = sorted_hand(&self.state, count)?.into_iter().map(|tile| tile.to_string()).collect();
+        if tiles.len() != count { return None; }
+        let mut references = std::collections::BTreeMap::new();
+        for name in choices.iter().flatten() {
+            let index = tiles.iter().position(|tile| tile == name)?;
+            references.insert(name.clone(), index);
+        }
+        Some(references)
+    }
     pub fn new(seat: u8, model: Option<&Path>) -> Result<Self> {
         let session = if let Some(path) = model {
             ensure_runtime_cleanup()?;
@@ -60,6 +78,23 @@ impl Inference {
         self.style = style;
         self.intensity = intensity;
     }
+    pub fn riichi_discard(&mut self, choices: &[String]) -> Result<(String, usize, usize, Option<usize>)> {
+        let original = self.state.clone();
+        let result = (|| {
+            self.state.update(&Event::Reach { actor: self.seat })?;
+            let allowed: Vec<String> = choices.iter()
+                .map(|tile| crate::converter::majsoul_tile_to_mjai(tile))
+                .collect::<std::result::Result<_, _>>().map_err(anyhow::Error::msg)?;
+            let index = self.choose_index_with_choices(false, Some(&allowed))?;
+            let action = crate::action::decode(&self.state, self.seat, index, None)?;
+            let Event::Dahai { pai, .. } = action else { anyhow::bail!("riichi action is not a discard"); };
+            let (hand_index, hand_count, drawn_index) = discard_position(&self.state, &action, self.synthetic_draw)
+                .context("cannot locate riichi discard")?;
+            Ok((pai.to_string(), hand_index, hand_count, drawn_index))
+        })();
+        self.state = original;
+        result
+    }
     pub fn process(&mut self, event: Event, decide: bool) -> Result<Option<serde_json::Value>> {
         if matches!(event, Event::StartGame { .. }) { self.reset(); }
         let new_round = matches!(event, Event::StartKyoku { .. });
@@ -73,12 +108,18 @@ impl Inference {
         let action = if decide && (cans.can_act() || cans.can_pass()) { self.decide()? } else { None };
         if let Some(action) = action {
             let position = discard_position(&self.state, &action, self.synthetic_draw);
-            let mut json = serde_json::to_value(action)?;
+            let mut json = serde_json::to_value(&action)?;
             if let Some(object) = json.as_object_mut() {
                 if let Some((index, count, drawn_index)) = position {
                     object.insert("hand_index".into(), index.into());
                     object.insert("hand_count".into(), count.into());
                     if let Some(drawn_index) = drawn_index { object.insert("drawn_index".into(), drawn_index.into()); }
+                }
+                if let Event::Chi { consumed, .. } = action {
+                    if let Some((indices, count)) = chi_positions(&self.state, consumed) {
+                        object.insert("chi_hand_indices".into(), serde_json::json!(indices));
+                        object.insert("hand_count".into(), count.into());
+                    }
                 }
                 if cans.can_discard {
                     let riichi = self.state.tactical_riichi();
@@ -98,6 +139,9 @@ impl Inference {
         } else { Ok(None) }
     }
     fn choose_index(&mut self, kan_select: bool) -> Result<usize> {
+        self.choose_index_with_choices(kan_select, None)
+    }
+    fn choose_index_with_choices(&mut self, kan_select: bool, choices: Option<&[String]>) -> Result<usize> {
         let (obs, mask) = self.state.encode_obs(4, kan_select);
         let scores = if let Some(session) = &mut self.session {
             let obs = obs.as_standard_layout();
@@ -111,6 +155,12 @@ impl Inference {
         } else { mask.iter().map(|&m| if m { 0.0 } else { f32::NEG_INFINITY }).collect() };
         let mut scores: [f32; 46] = scores.try_into().map_err(|_| anyhow::anyhow!("invalid model action count"))?;
         let mut allowed: [bool; 46] = std::array::from_fn(|i| mask[i]);
+        if let Some(choices) = choices {
+            for (index, permitted) in allowed.iter_mut().enumerate() {
+                *permitted &= index < 37 && riichi::tile::Tile::try_from(index)
+                    .map(|tile| choices.contains(&tile.to_string())).unwrap_or(false);
+            }
+        }
         if !kan_select && self.style == crate::policy::Style::CallManiac && self.intensity > 0.0 {
             // Never trade an available win for an aggressive call.
             if allowed[43] && scores[43].is_finite() { return Ok(43); }
@@ -156,20 +206,24 @@ impl Inference {
 
 }
 
-/// Derive the standard sorted hand, preserving the separated drawn tile when present.
-fn display_hand(state: &PlayerState, synthetic_draw: bool) -> Option<(Vec<riichi::tile::Tile>, Option<usize>)> {
-    use riichi::tile::Tile;
+fn sorted_hand(state: &PlayerState, count: usize) -> Option<Vec<riichi::tile::Tile>> {
     let counts = state.tehai();
-    let count = counts.iter().map(|&n| usize::from(n)).sum::<usize>();
-    if !matches!(count, 2 | 5 | 8 | 11 | 14) { return None; }
     let reds = state.akas_in_hand();
     let mut tiles = Vec::with_capacity(count);
     for (i, &num) in counts.iter().enumerate() {
-        let tile = Tile::try_from(i).ok()?;
+        let tile = riichi::tile::Tile::try_from(i).ok()?;
         let red = i < 27 && i % 9 == 4 && reds[i / 9];
         if red { tiles.push(tile.akaize()); }
         for _ in 0..num.checked_sub(u8::from(red))? { tiles.push(tile); }
     }
+    Some(tiles)
+}
+
+/// Derive the standard sorted hand, preserving the separated drawn tile when present.
+fn display_hand(state: &PlayerState, synthetic_draw: bool) -> Option<(Vec<riichi::tile::Tile>, Option<usize>)> {
+    let count = state.tehai().iter().map(|&n| usize::from(n)).sum::<usize>();
+    if !matches!(count, 2 | 5 | 8 | 11 | 14) { return None; }
+    let mut tiles = sorted_hand(state, count)?;
     // The first dealer draw is synthetic; the game displays those tiles together.
     if !synthetic_draw {
         if let Some(draw) = state.last_self_tsumo() {
@@ -180,6 +234,16 @@ fn display_hand(state: &PlayerState, synthetic_draw: bool) -> Option<(Vec<riichi
         }
     }
     Some((tiles, None))
+}
+
+/// A chi takes two tiles from the resting hand. Keep red and plain fives distinct.
+fn chi_positions(state: &PlayerState, consumed: [riichi::tile::Tile; 2]) -> Option<([usize; 2], usize)> {
+    let count = state.tehai().iter().map(|&n| usize::from(n)).sum::<usize>();
+    if !matches!(count, 4 | 7 | 10 | 13) { return None; }
+    let tiles = sorted_hand(state, count)?;
+    let first = tiles.iter().position(|&tile| tile == consumed[0])?;
+    let second = tiles.iter().position(|&tile| tile == consumed[1])?;
+    (first != second).then_some(([first, second], count))
 }
 
 fn discard_position(state: &PlayerState, action: &Event, synthetic_draw: bool) -> Option<(usize, usize, Option<usize>)> {
@@ -309,6 +373,22 @@ pub fn self_test(model: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn riichi_discard_uses_only_offered_tiles_and_restores_state() {
+        let mut engine = Inference::new(0, None).unwrap();
+        engine.process(round(), false).unwrap();
+        let draw = serde_json::from_value(serde_json::json!({"type":"tsumo","actor":0,"pai":"E"})).unwrap();
+        engine.process(draw, false).unwrap();
+        assert!(engine.state.last_cans().can_riichi);
+        let before = engine.state.encode_obs(4, false).1;
+        let (tile, index, count, _) = engine.riichi_discard(&["1m".into(), "1z".into()]).unwrap();
+        assert_eq!((tile.as_str(), index, count), ("1m", 0, 14));
+        let (tile, index, count, drawn) = engine.riichi_discard(&["1z".into()]).unwrap();
+        assert_eq!((tile.as_str(), index, count, drawn), ("E", 13, 14, Some(13)));
+        assert_eq!(engine.state.encode_obs(4, false).1, before);
+        assert!(engine.riichi_discard(&["9z".into()]).is_err());
+        assert_eq!(engine.state.encode_obs(4, false).1, before);
+    }
     #[test]
     fn undeclared_threats_require_public_evidence() {
         let mut river = [false; 34];

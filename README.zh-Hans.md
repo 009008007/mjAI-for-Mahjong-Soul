@@ -2,7 +2,7 @@
 
 [English](README.md) · 简体中文 · [繁體中文](README.zh-Hant.md)
 
-mjai 是雀魂的只读辅助工具。Chrome 扩展程序读取支持的牌局消息，本地 Rust 桥接程序维护牌局状态，Mortal v4 ONNX 模型提供建议。
+mjai 是雀魂 AI 辅助工具，HUD 也提供可选的代打功能。Chrome 扩展程序读取支持的牌局消息，本地 Rust 桥接程序维护牌局状态，Mortal v4 ONNX 模型提供建议。
 
 此文件夹为源码套件，不含模型、ONNX Runtime、Python、已编译桥接程序、Chrome 个人资料或已保存的扩展程序 ID。普通用户请参阅另行提供的 portable 套件。macOS 启动器源码及[套件指南](docs/macos.zh-Hans.md)也包含在内。
 
@@ -14,7 +14,8 @@ GitHub 源码 ZIP 不含随附模型、桥接程序或运行环境。
 
 ## 功能
 
-- 切牌与操作按钮建议及绿框。
+- 切牌、操作按钮及可识别的原生多选吃牌绿框。
+- 可选代打，包含 1–3 秒延迟、立直切牌及牌局事件确认的绿框备用操作。
 - 根据立直、副露和后盘舍牌显示红色及橙色风险提示，可独立切换。
 - 黑绿、白色、浅粉蓝主题，以及可保存的位置、大小和收起状态。
 - Default Mortal、CallManiac、SuperTurtle 人格及强度调节。

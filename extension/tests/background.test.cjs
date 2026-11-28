@@ -21,8 +21,9 @@ test('replays before live updates and suppresses old suggestions until barrier',
  assert.equal(messages.filter(x=>x.kind==='suggestion')[0].data.pai,'1m');
  assert.equal(sockets[0].sent[0],'{"type":"policy","style":"CallManiac","intensity":1.5,"revision":2}');
  assert.equal(sockets[0].sent[1],'{"type":"seat","seat":2}');
- assert.equal(Buffer.from(sockets[0].sent[2]).toString(),'history');
- assert.equal(sockets[0].sent[3],'{"type":"replay_end"}');
+ assert.equal(sockets[0].sent[2],'{"type":"frame_meta","serial":0}');
+ assert.equal(Buffer.from(sockets[0].sent[3]).toString(),'history');
+ assert.equal(sockets[0].sent[4],'{"type":"replay_end"}');
  port.onDisconnect.fire();
 });
 

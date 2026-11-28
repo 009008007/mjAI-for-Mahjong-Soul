@@ -2,9 +2,7 @@
 
 English · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
-mjai is a read-only Mahjong Soul assistant: a Chrome extension observes supported
-game messages, a local Rust bridge maintains game state, and a Mortal v4 ONNX
-model provides suggestions. The extension displays advice and does not play.
+mjai is a Mahjong Soul assistant. A Chrome extension observes supported game messages, a local Rust bridge maintains game state, and a Mortal v4 ONNX model provides suggestions. The HUD also offers opt-in autoplay.
 
 This folder is a **source package**. It does not contain a model, ONNX Runtime,
 Python, a built bridge, Chrome profile data or saved extension IDs. A separate
@@ -20,7 +18,8 @@ The source-code ZIP does not contain the bundled model, bridge or runtime.
 
 ## Features
 
-- Suggestions and optional green outlines for discards and action buttons.
+- Suggestions and green highlights, including exact native chi selections when identifiable.
+- Opt-in autoplay with a 1–3 second delay, riichi discard selection and a game-confirmed highlight fallback.
 - Optional red and orange warnings for high- and medium-risk tiles based on riichi, open melds and late-round discards, independently configurable from the recommendation highlight.
 - Black-green, white, and pastel pink-blue HUD themes, with saved position, scale and collapse state.
 - Default Mortal, CallManiac and SuperTurtle styles, with adjustable intensity.

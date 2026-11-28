@@ -91,4 +91,4 @@ message GameRestore { repeated ActionPrototype actions = 2; }
 message GameSyncResponse { bytes error = 1; bool is_end = 2; uint32 step = 3; GameRestore game_restore = 4; }
 
 message OptionalOperation { uint32 type = 1; repeated string combination = 2; }
-message OptionalOperationList { uint32 seat = 1; repeated OptionalOperation operation_list = 2; }
+message OptionalOperationList { uint32 seat = 1; repeated OptionalOperation operation_list = 2; uint32 time_add = 4; uint32 time_fixed = 5; }

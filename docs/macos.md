@@ -10,7 +10,7 @@ Everything needed to run the bridge and AI model is in this folder. The current 
 2. Double-click **Start-mjai.command**. A Terminal window opens and checks the files and AI model. The check does not start a game.
 3. Choose **1**. If the extension has not been found, let the launcher open Chrome's Extensions page. Turn on **Developer mode**, click **Load unpacked**, and select the `extension` folder inside `mjAI_portable`.
 4. Return to the launcher and press **Return**. It will try to find and remember the extension ID. If it cannot, copy the ID from the Chrome extension card and paste it into the launcher once. Use the same Chrome profile when playing.
-5. Keep the launcher window open. In Chrome, open or reload your Mahjong Soul game page and start a standard four-player game. The HUD should appear in the top-right corner. The launcher does not play for you.
+5. Keep the launcher window open. In Chrome, open or reload your Mahjong Soul game page and start a standard four-player game. The HUD should appear in the top-right corner.
 
 **Testing on the original Mac:** if your previous Mahjong Soul AI HUD is still enabled, disable that old HUD extension in Chrome before loading this portable copy; otherwise both overlays may appear. The current extension is named **mjai HUD**. This does not require changing Clash or other extensions. Do not enable the old `Majsoul Intercept v6` Tampermonkey script: it redirects the game to an old server.
 
@@ -59,3 +59,9 @@ The extension sends the game's relevant action and reconnect messages to the loc
 ## Choose or import a model
 
 Choose 1, then select a model by number or press Enter to use the last selection. Choose A to import: drag an ONNX file into the terminal and press Enter. The launcher tests compatibility and stores a copy in `model/imported/`. It preserves existing models and remembers your choice. Select Q to return. Only self-contained compatible Mortal v4 ONNX models are supported.
+
+## Temporary autoplay
+
+Check **Enable autoplay** in the HUD to follow AI decisions; clear it to block all further automated submissions. Normally actions wait randomly for 1–3 seconds. When little time remains, a still-valid highlighted recommendation is sent immediately. If a discard or win is not confirmed in time, the extension uses Chrome’s debugger permission to click the current visible highlight. For discards, it can confirm the selected tile with a second click if the game has not yet sent an operation. The HUD reports confirmation from the game event. Chrome may briefly display a debugging notice. The checkbox stays enabled across manual moves and recoverable errors; a decision is skipped if its game state cannot be verified. A submission already sent cannot be recalled. Keep the game page open and the computer awake.
+
+Compatibility with live Mahjong Soul games still needs verification. Test riichi and multiple chi choices in a computer practice game first.

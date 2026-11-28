@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "mjai HUD",
-  "version": "0.1.0",
-  "description": "Displays read-only suggestions from a local Mahjong Soul bridge.",
+  "version": "0.1.2",
+  "description": "Displays local AI suggestions and optional autoplay for Mahjong Soul.",
   "minimum_chrome_version": "116",
   "host_permissions": [
     "http://127.0.0.1/*"
@@ -18,6 +18,7 @@
         "https://game.maj-soul.net/*"
       ],
       "js": [
+        "transport.js",
         "hook.js"
       ],
       "run_at": "document_start",
@@ -31,6 +32,9 @@
       ],
       "js": [
         "i18n.js",
+        "autoplay.js",
+        "confirmation.js",
+        "chi-menu.js",
         "highlight.js",
         "policy-ui.js",
         "display-settings.js",
@@ -41,6 +45,7 @@
     }
   ],
   "permissions": [
-    "storage"
+    "storage",
+    "debugger"
   ]
 }

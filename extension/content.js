@@ -1,4 +1,4 @@
-// Isolated world: render a passive HUD and relay captured notifications.
+// Isolated world: render the HUD and coordinate recommendations and autoplay.
 (() => {
   'use strict';
   const CHANNEL = 'majsoul-hud-v1';
@@ -17,11 +17,211 @@
   let display = {best:true, danger:false, theme:'dark'};
   let lastSuggestion = null;
   let card;
+  let autoEnabled = false, autoTask = null, autoCounter = 0, autoCheckbox, autoStatus, deferredAuto, autoSession = '';
+  let fallbackTask = null, fallbackTimer = null;
+  const gateAttribute = 'data-mjai-autoplay-session';
+  function armGate() {
+    autoSession = `${Date.now()}-${Math.random()}-${++autoCounter}`;
+    document.documentElement.setAttribute(gateAttribute, autoSession);
+  }
+  function closeGate() {
+    if (document.documentElement.getAttribute(gateAttribute) === autoSession)
+      document.documentElement.removeAttribute(gateAttribute);
+    autoSession = '';
+  }
+  function cancelFallbackClick(task) {
+    if (task.token === null) return;
+    send({kind:'fallback_cancel', id:task.id, token:task.token});
+    task.token = null;
+  }
+  function clearFallback() {
+    if (fallbackTask) cancelFallbackClick(fallbackTask);
+    if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+    fallbackTimer = null; fallbackTask = null;
+  }
+  function fallbackStatus(value) {
+    if (autoStatus) autoStatus.textContent = 'Auto status: ' + value;
+  }
+  function attemptFallback(id) {
+    const entry = active.get(id), value = entry?.autoAdvice, snapshot = entry?.autoSnapshot;
+    if (id !== current || !autoEnabled || !autoCheckbox?.checked || !autoSession ||
+        document.documentElement.getAttribute(gateAttribute) !== autoSession || !entry ||
+        !entry.connected || entry.replaying || !snapshot || !value || value !== lastSuggestion ||
+        value.frame_serial !== entry.serial || snapshot.key.serial !== entry.serial ||
+        entry.fallbackSerial === entry.serial || entry.nativeSerial === entry.serial) return false;
+    const command = globalThis.MjaiAutoplay.resolve(snapshot, value);
+    if (!command || !['dahai','hora'].includes(value.type)) { fallbackStatus('fallback_unavailable'); return false; }
+    const target = highlight?.fallbackTarget?.(value);
+    if (!target) { fallbackStatus('fallback_unavailable'); return false; }
+    entry.fallbackSerial = entry.submittedSerial = entry.serial;
+    clearFallback();
+    fallbackTask = {id, token:null, snapshot, command, value, session:autoSession, canvas:target.canvas,
+      committed:false, clicks:0, nativeSent:false};
+    beginFallbackClick(fallbackTask);
+    return true;
+  }
+  function beginFallbackClick(task) {
+    task.token = ++autoCounter;
+    send({kind:'fallback_begin', id:task.id, token:task.token});
+    fallbackStatus(task.clicks ? 'fallback_second_click' : 'fallback_preparing');
+    watchFallback(task, 1500, () => {
+      cancelFallbackClick(task);
+      fallbackStatus('fallback_input_failed');
+    });
+  }
+  function watchFallback(task, delay, callback) {
+    if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+    const timer = setTimeout(() => {
+      if (fallbackTask !== task || fallbackTimer !== timer) return;
+      fallbackTimer = null;
+      callback();
+    }, delay);
+    fallbackTimer = timer;
+  }
+  function retryFallback(task) {
+    // One click can lift a tile without sending a request. Only try the
+    // second press while the same decision is open and no input was sent.
+    return task.clicks === 1 && task.command.type === 1 && !task.nativeSent &&
+      performance.now() + 300 < task.snapshot.deadline;
+  }
+  function receiveFallback(message) {
+    const task = fallbackTask;
+    if (!task || task.id !== message.id || task.token !== message.token) return;
+    if (message.kind === 'fallback_ready') {
+      const entry = active.get(task.id);
+      const target = autoEnabled && autoCheckbox?.checked && autoSession === task.session &&
+        document.documentElement.getAttribute(gateAttribute) === task.session &&
+        current === task.id && lastSuggestion === task.value && entry?.connected && !entry.replaying &&
+        entry.serial === task.snapshot.key.serial && entry.nativeSerial !== entry.serial &&
+        (!task.clicks || retryFallback(task)) && highlight?.fallbackTarget?.(task.value);
+      if (!target || target.canvas !== task.canvas) { clearFallback(); fallbackStatus('fallback_unavailable'); return; }
+      task.committed = true;
+      send({kind:'fallback_target', id:task.id, token:task.token, x:target.x, y:target.y, checkedAt:Date.now()});
+    } else if (message.state === 'clicked') {
+      task.token = null;
+      task.clicks++;
+      fallbackStatus('fallback_click');
+      if (retryFallback(task)) {
+        watchFallback(task, 220, () => {
+          if (retryFallback(task)) beginFallbackClick(task);
+          else watchFallback(task, 2000, () => fallbackStatus('fallback_unconfirmed'));
+        });
+      } else watchFallback(task, 2000, () => fallbackStatus('fallback_unconfirmed'));
+    } else {
+      clearFallback();
+      fallbackStatus(message.state === 'stale' ? 'fallback_unavailable' : 'fallback_input_failed');
+    }
+  }
+  function observeNativeOperation(id, {serial, command}) {
+    const entry = active.get(id);
+    if (!entry || serial !== entry.serial) return;
+    entry.nativeSerial = serial;
+    if (!autoEnabled || (id !== current && id !== autoTask?.socketId && id !== fallbackTask?.id)) return;
+    const task = fallbackTask;
+    if (task?.id === id && task.committed && task.snapshot.key.serial === serial &&
+        command?.method === task.command.method && command.type === task.command.type && command.tile === task.command.tile) {
+      task.nativeSent = true;
+      cancelFallbackClick(task);
+      fallbackStatus('fallback_submitted');
+      watchFallback(task, 5000, () => fallbackStatus('fallback_unconfirmed'));
+    } else stopAuto('manual');
+  }
+  const auto = globalThis.MjaiAutoplay?.createController({
+    now: () => performance.now(),
+    random: () => Math.random(),
+    schedule: (fn, delay) => setTimeout(fn, delay),
+    cancel: id => clearTimeout(id),
+    send: (key, command) => {
+      const entry = active.get(key.socketId);
+      if (!autoEnabled || !autoCheckbox?.checked || !autoSession ||
+          document.documentElement.getAttribute(gateAttribute) !== autoSession ||
+          current !== key.socketId || !entry || entry.serial !== key.serial ||
+          entry.submittedSerial === key.serial || entry.nativeSerial === key.serial ||
+          entry.replaying || !entry.connected) return null;
+      const localId = ++autoCounter;
+      autoTask = {key, command, localId, socketId:current, requestId:null};
+      entry.submittedSerial = key.serial;
+      window.postMessage({channel:'majsoul-auto-v1', kind:'submit', id:current, serial:key.serial, localId,
+        session:autoSession, action:command, timeuse:Math.max(0, Math.floor((performance.now() - key.openedAt) / 1000))}, location.origin);
+      return localId;
+    },
+    status: (value, key) => {
+      const fallbackId = autoTask?.socketId ?? key?.socketId;
+      if (autoStatus) autoStatus.textContent = 'Auto status: ' + value;
+      if (value === 'confirmed') {
+        if (Number.isInteger(autoTask?.requestId)) window.postMessage({channel:'majsoul-auto-v1', kind:'complete',
+          id:autoTask.socketId, requestId:autoTask.requestId}, location.origin);
+        autoTask = null;
+        const deferred = deferredAuto;
+        deferredAuto = null;
+        if (deferred) setTimeout(() => offerAuto(deferred.id, deferred.value), 0);
+      }
+      if (['unresolved','expired','send_failed','rejected','conflict','state_changed','confirmation_timeout'].includes(value)) {
+        if (Number.isInteger(autoTask?.requestId)) window.postMessage({channel:'majsoul-auto-v1',kind:'complete',
+          id:autoTask.socketId,requestId:autoTask.requestId},location.origin);
+        autoTask = null;
+        deferredAuto = null;
+        if (autoEnabled) armGate();
+      }
+      if (fallbackId && ['missed','confirmation_timeout','send_failed'].includes(value)) attemptFallback(fallbackId);
+    },
+  });
+  function stopAuto(reason) {
+    clearFallback();
+    if (reason === 'off') { autoEnabled = false; closeGate(); }
+    else if (autoEnabled) armGate();
+    if (Number.isInteger(autoTask?.requestId)) window.postMessage({channel:'majsoul-auto-v1',kind:'complete',
+      id:autoTask.socketId,requestId:autoTask.requestId},location.origin);
+    auto?.stop(reason);
+    autoTask = null;
+    deferredAuto = null;
+    if (autoCheckbox) autoCheckbox.checked = autoEnabled;
+  }
+  function offerAuto(id, value) {
+    const entry = active.get(id), data = value.opportunity;
+    if (!autoEnabled || !entry || !data || entry.submittedSerial === entry.serial || entry.nativeSerial === entry.serial ||
+      !Number.isSafeInteger(entry.serial) || entry.serial <= 0 || value.frame_serial !== entry.serial ||
+      entry.replaying || !entry.connected || !Number.isFinite(entry.receivedAt)) return;
+    if (!entry.lastSummary || data.step !== entry.lastSummary.step ||
+        data.source?.replace(/^\.lq\./, '') !== entry.lastSummary.type) return stopAuto('state_changed');
+    if (autoTask) { deferredAuto = {id, value}; return; }
+    const wireTile = globalThis.MjaiAutoplay.wireTile;
+    if (!Array.isArray(data.hand) || !Array.isArray(data.operations)) return stopAuto('unresolved');
+    const budget = data.time_fixed + data.time_add;
+    const key = {socketId:id,serial:entry.serial,openedAt:entry.receivedAt};
+    const snapshot = {
+      ...data, key, openedAt:entry.receivedAt,
+      deadline:Number.isFinite(budget) && budget > 0 && budget <= 120000 ? entry.receivedAt + budget : performance.now() - 1,
+      hand:data.hand.map(wireTile), drawn:wireTile(data.drawn),
+      callSource:data.source?.endsWith('ActionDiscardTile') ? 'discard' : 'self',
+      called:entry.lastSummary?.type === 'ActionDiscardTile' ? entry.lastSummary.tile : null,
+    };
+    autoTask = null;
+    entry.autoSnapshot = snapshot;
+    entry.autoAdvice = value;
+    if (!auto.isEnabled()) auto.start(true);
+    auto.offer(snapshot, value);
+  }
+  function chiMeld(value) {
+    if (value.type !== 'chi' || !Array.isArray(value.consumed) || value.consumed.length !== 2) return null;
+    const tiles = [value.pai, ...value.consumed];
+    if (!tiles.every(tile => typeof tile === 'string' && /^(?:[1-9][mps]|5[mps]r)$/.test(tile) && tile[1] === value.pai[1])) return null;
+    tiles.sort();
+    const ranks = tiles.map(tile => Number(tile[0]));
+    if (ranks[0] + 1 !== ranks[1] || ranks[1] + 1 !== ranks[2]) return null;
+    const suit = {m:'Characters', p:'Dots', s:'Bamboo'}[value.pai[1]];
+    const red = tiles.some(tile => tile.length === 3) ? ' (red five)' : '';
+    return `${ranks.join('')} ${suit}${red}`;
+  }
   function showSuggestion(value) {
     const labels = {dahai:'Discard', reach:'Riichi', hora:'Win', ryukyoku:'Draw', chi:'Chi', pon:'Pon', daiminkan:'Open kan', ankan:'Closed kan', kakan:'Added kan', none:'Pass'};
     if (!Object.hasOwn(labels, value.type)) return;
+    const meld = chiMeld(value);
     const tile = typeof value.pai === 'string' && /^(?:[1-9][mps]r?|[ESWNPFC]|\?)$/.test(value.pai) ? ` ${value.pai}` : '';
     const consumed = Array.isArray(value.consumed) && value.consumed.every(x => typeof x === 'string' && /^(?:[1-9][mps]r?|[ESWNPFC])$/.test(x)) ? `\nUse: ${value.consumed.join(' ')}` : '';
+    const riichiDiscard = value.type === 'reach' && typeof value.riichi_discard === 'string' &&
+      /^(?:[1-9][mps]r?|[ESWNPFC])$/.test(value.riichi_discard)
+      ? `\nRiichi discard: ${value.riichi_discard}` : '';
     const shanten = Number.isInteger(value.shanten) ? `\nShanten: ${value.shanten}` : '';
     const demo = value.source === 'demo' ? '\nDemo mode' : '';
     let warning = '';
@@ -48,7 +248,8 @@
         if (!warning) warning = '\n危險牌：本手未達提示門檻';
       }
     }
-    render('Suggestion', `${labels[value.type]}${tile}${consumed}${shanten}${demo}${warning}`);
+    render('Suggestion', `${labels[value.type]}${meld ? ` ${meld}` : tile}${consumed}${riichiDiscard}${shanten}${demo}${warning}`);
+    if (meld && display.best) action.className = 'action chi-suggestion';
     highlight?.show(value, display);
   }
   function updateDisplay(value) {
@@ -59,6 +260,7 @@
   function render(state, detail = '') {
     if (!root) return;
     status.textContent = state;
+    action.className = 'action';
     action.textContent = detail;
     if (state !== 'Suggestion') { lastSuggestion = null; highlight?.clear(); }
   }
@@ -73,9 +275,10 @@
     card = document.createElement('div'); card.className = 'card theme-dark';
     const panelStyle = document.createElement('style');
     panelStyle.textContent = '.card{box-sizing:border-box;max-width:min(360px,calc((100vw - 20px)/1.5))}.hud-header{display:flex;align-items:center;gap:5px}.hud-drag{flex:1;pointer-events:auto;cursor:move;touch-action:none;user-select:none}.hud-body{max-height:55vh;overflow:auto;overflow-wrap:anywhere}.hud-body[hidden]{display:none}.hud-header button,.hud-body>button{pointer-events:auto;cursor:pointer;border:1px solid var(--mj-border);border-radius:4px;background:var(--mj-control);color:var(--mj-text)}.hud-body>button{margin-top:6px}';
+    panelStyle.textContent += '.chi-suggestion{border-inline-start:3px solid #28b961;padding-inline-start:7px}';
     const header = document.createElement('div'); header.className = 'hud-header';
     const body = document.createElement('div'); body.className = 'hud-body';
-    const title = document.createElement('div'); title.className = 'title'; title.textContent = 'mjai · read only';
+    const title = document.createElement('div'); title.className = 'title'; title.textContent = 'mjai';
     status = document.createElement('div'); status.className = 'status';
     action = document.createElement('div'); action.className = 'action';
     header.append(title); body.append(status, action); card.append(header, body);
@@ -84,6 +287,18 @@
     globalThis.MajsoulPolicyUI?.create(body, updatePolicy);
     root = host;
     globalThis.MajsoulDisplaySettings?.create(body, updateDisplay);
+    const autoLabel = document.createElement('label');
+    Object.assign(autoLabel.style, {display:'block',pointerEvents:'auto',cursor:'pointer'});
+    autoCheckbox = document.createElement('input'); autoCheckbox.type='checkbox'; autoCheckbox.checked=false;
+    const autoLabelText = document.createElement('span'); autoLabelText.textContent='Enable autoplay';
+    autoLabel.append(autoCheckbox, autoLabelText);
+    autoStatus = document.createElement('div'); autoStatus.textContent='Auto status: off';
+    body.append(autoLabel, autoStatus);
+    autoCheckbox.addEventListener?.('change', () => {
+      if (!autoCheckbox.checked) return stopAuto('off');
+      autoEnabled = true; armGate(); auto.start();
+      if (current && lastSuggestion) offerAuto(current, lastSuggestion);
+    });
     globalThis.MajsoulPanel?.create(host, header, title, body);
     globalThis.MjaiI18n?.create(card, body);
     render('Waiting for game traffic');
@@ -98,6 +313,7 @@
   function updatePolicy(value) {
     if (!value || value.style === policy.style && value.intensity === policy.intensity) return;
     policy = value;
+    if (autoEnabled) stopAuto('state_changed');
     policyRevision++;
     current = null;
     render('Style updated; applies at next decision');
@@ -112,8 +328,11 @@
       return false;
     }
     port.onMessage.addListener(message => {
+      if (message?.kind === 'fallback_ready' || message?.kind === 'fallback_result') {
+        receiveFallback(message); return;
+      }
       if (message.kind === 'connection') {
-        if (message.state === 'disconnected') { const entry = active.get(message.id); if (entry) entry.connected = false; if (!current || current === message.id) { current = null; render('Bridge disconnected; retrying'); } }
+        if (message.state === 'disconnected') { const entry = active.get(message.id); if (entry) entry.connected = false; if (autoEnabled) stopAuto('state_changed'); if (!current || current === message.id) { current = null; render('Bridge disconnected; retrying'); } }
         else if (message.state === 'connected') {
           const entry = active.get(message.id);
           if (!entry) return;
@@ -147,6 +366,7 @@
         else if (value.status === 'needs_seat') { current = null; render('Seat not detected; reload the game'); }
         else if (value.status === 'seat_mismatch') { current = null; render('Seat changed; reload the game'); }
         else if (value.status === 'desynchronized') {
+          if (autoEnabled) stopAuto('state_changed');
           const entry = active.get(message.id); current = null;
           if (entry && entry.valid && !entry.recoveryAttempted) {
             entry.recoveryAttempted = true; entry.connected = false;
@@ -158,33 +378,57 @@
       current = message.id;
       lastSuggestion = value;
       showSuggestion(value);
+      offerAuto(message.id, value);
     });
     port.onDisconnect.addListener(() => {
+      if (autoEnabled) stopAuto('state_changed');
       port = null; current = null; for (const entry of active.values()) entry.connected = false; render('Extension disconnected; retrying');
       setTimeout(() => { if (connect()) for (const id of active.keys()) send({kind:'open', id}); }, 2000);
     });
     return true;
   }
   connect();
+  window.addEventListener('pagehide', clearFallback);
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin || !event.data || event.data.channel !== CHANNEL) return;
     const {kind, id, buffer} = event.data;
     if (typeof id !== 'string' || !/^\d{1,12}$/.test(id)) return;
     if (kind === 'open') {
-      if (!active.has(id)) active.set(id, {seat:null, journal:[], bytes:0, valid:true, connected:false, replaying:false, pendingPolicy:null, recoveryAttempted:false, pendingRestores:new Map()});
+      if (!active.has(id)) active.set(id, {seat:null, journal:[], bytes:0, valid:true, connected:false, replaying:false, pendingPolicy:null, recoveryAttempted:false, pendingRestores:new Map(), serial:0});
       send({kind, id});
     } else if (kind === 'close' || kind === 'reset') {
+      if (autoEnabled) stopAuto('state_changed');
       active.delete(id); send({kind, id});
       if (current === id) { current = null; render('Waiting for game traffic'); }
     } else if (kind === 'seat' && active.has(id) && Number.isInteger(event.data.seat) && event.data.seat >= 0 && event.data.seat <= 3) {
       const entry = active.get(id), changed = entry.seat !== event.data.seat;
       entry.seat = event.data.seat;
       if (entry.connected && changed) {
+        if (autoEnabled) stopAuto('state_changed');
         entry.connected = false; entry.recoveryAttempted = false;
         render('Rebuilding game state'); send({kind:'restart', id});
       }
     } else if (kind === 'frame' && active.has(id) && buffer instanceof ArrayBuffer && buffer.byteLength <= 1024 * 1024 + 4096) {
       const bytes = new Uint8Array(buffer), entry = active.get(id);
+      if (Number.isSafeInteger(event.data.serial) && event.data.serial > 0) {
+        entry.serial = event.data.serial;
+        entry.receivedAt = performance.now();
+        entry.lastSummary = event.data.summary;
+        if (fallbackTask?.id === id) {
+          const task = fallbackTask;
+          const result = event.data.summary?.step > task.snapshot.step
+            ? globalThis.MjaiConfirmation.confirm(task.snapshot, task.command, event.data.summary) : 'waiting';
+          if (result !== 'waiting' || !task.nativeSent || event.data.newRound === true) {
+            clearFallback();
+            if (result === 'match') fallbackStatus(task.committed ? 'fallback_confirmed' : 'confirmed');
+            else if (task.committed) fallbackStatus(result === 'conflict' ? 'fallback_conflict' : 'fallback_unconfirmed');
+          }
+        }
+        if (autoTask && autoTask.socketId === id && entry.autoSnapshot && event.data.summary) {
+          const result = globalThis.MjaiConfirmation.confirm(entry.autoSnapshot, autoTask.command, event.data.summary);
+          if (result !== 'waiting') auto.observed(autoTask.key, result === 'match');
+        } else if (autoEnabled && id === current && !autoTask) auto.invalidate();
+      }
       let binary = '';
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
       const data = btoa(binary);
@@ -195,6 +439,7 @@
         entry.valid = true; entry.recoveryAttempted = false;
       }
       if (Number.isInteger(event.data.restoreRequest)) {
+        if (autoEnabled) stopAuto('state_changed');
         if (entry.pendingRestores.size >= 256) entry.pendingRestores.clear();
         entry.pendingRestores.set(event.data.restoreRequest, data);
         if (!entry.valid) { entry.journal = []; entry.bytes = 0; entry.valid = true; }
@@ -205,7 +450,15 @@
           entry.journal = []; entry.bytes = 0; entry.valid = false;
         } else { entry.journal.push(data); entry.bytes += data.length; }
       }
-      if (entry.connected) send({kind:'frame', id, data});
+      if (entry.connected) send({kind:'frame', id, data, serial:event.data.serial});
+    } else if (kind === 'auto_sent' && autoTask && autoTask.socketId === id && event.data.localId === autoTask.localId && event.data.serial === autoTask.key.serial) {
+      autoTask.requestId = event.data.requestId;
+    } else if (kind === 'auto_response' && autoTask && autoTask.socketId === id && event.data.requestId === autoTask.requestId) {
+      auto.response(autoTask.localId, event.data.result);
+    } else if (kind === 'auto_send_failed' && autoTask && autoTask.socketId === id && event.data.localId === autoTask.localId) {
+      stopAuto('send_failed');
+    } else if (kind === 'manual_operation') {
+      observeNativeOperation(id, event.data);
     }
 
   });

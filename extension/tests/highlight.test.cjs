@@ -80,3 +80,64 @@ test('renders independent red and green marks and resolves overlapping recommend
  assert.equal(document.documentElement.children[0].style.display,'none');
  hud.clear(); assert.equal(document.documentElement.children[2].style.display,'none');
 });
+
+test('marks only the two tiles in the recommended chi and hides stale or invalid marks',()=>{
+ class Element {
+  constructor(){this.style={};this.children=[];this.listeners={};}
+  append(...nodes){this.children.push(...nodes);}
+  addEventListener(name,fn){this.listeners[name]=fn;}
+  remove(){this.removed=true;}
+ }
+ const canvasEl={getBoundingClientRect:()=>({...canvas,right:1700,bottom:950})};
+ const document={documentElement:new Element(),createElement:()=>new Element(),querySelectorAll:()=>[canvasEl],addEventListener(){}};
+ const window={innerWidth:1920,innerHeight:1080,getComputedStyle:()=>({display:'block',visibility:'visible'}),addEventListener(){}};
+ const context={document,window,chrome:{storage:{local:{get(_,cb){cb({})},set(){}}}},setInterval:()=>1,clearInterval(){}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../highlight.js'),'utf8'),context);
+ const hud=context.MajsoulHighlight.create(new Element());
+ const chi={type:'chi',button_index:1,button_count:2,hand_count:13,chi_hand_indices:[8,9]};
+ hud.show(chi);
+ const [button, first, second]=document.documentElement.children;
+ assert.equal(button.style.display,'block');
+ assert.equal(first.style.pointerEvents,'none');
+ assert.equal(first.style.display,'block');
+ assert.equal(second.style.display,'block');
+ const previous=parseFloat(first.style.left);
+ hud.show({...chi,chi_hand_indices:[6,7]});
+ assert.ok(parseFloat(first.style.left)<previous);
+ for(const indices of [[6,6],[6,13],[6,null],undefined]){
+  hud.show({...chi,chi_hand_indices:indices});
+  assert.equal(first.style.display,'none');
+  assert.equal(second.style.display,'none');
+ }
+ hud.show(chi,{best:false});
+ assert.equal(first.style.display,'none');
+ hud.show({...chi,hand_count:10},{best:true});
+ assert.equal(first.style.display,'block');
+ hud.show({type:'none',button_index:0,button_count:2});
+ assert.equal(first.style.display,'none');
+ hud.show(chi);
+ hud.clear();
+ assert.equal(first.style.display,'none');
+ assert.equal(second.style.display,'none');
+ hud.destroy();
+ assert.equal(first.removed,true);
+ assert.equal(second.removed,true);
+});
+
+test('fallback target is the visible current green mark on the unobstructed game canvas',()=>{
+ class Element{constructor(){this.style={};this.children=[];this.listeners={}} append(...n){this.children.push(...n)} addEventListener(k,f){this.listeners[k]=f} remove(){}}
+ const canvas={getBoundingClientRect:()=>({left:0,top:0,right:1600,bottom:900,width:1600,height:900})};let atPoint=canvas;
+ const document={documentElement:new Element(),createElement:()=>new Element(),querySelectorAll:()=>[canvas],elementFromPoint:()=>atPoint,addEventListener(){}};
+ const window={innerWidth:1920,innerHeight:1080,getComputedStyle:()=>({display:'block',visibility:'visible'}),addEventListener(){}};
+ const context={document,window,chrome:{storage:{local:{get(_,cb){cb({})},set(){}}}},setInterval:()=>1,clearInterval(){}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../highlight.js'),'utf8'),context);
+ const hud=context.MajsoulHighlight.create(new Element());
+ const choice={type:'dahai',hand_count:14,hand_index:2,drawn_index:13};hud.show(choice,{best:true});
+ const target=hud.fallbackTarget(choice);assert.equal(target.canvas,canvas);
+ assert.ok(Math.abs(target.x-(.142+2*.0496)*1600)<.01);assert.ok(Math.abs(target.y-(.93-.14*.1)*900)<.01);
+ assert.equal(hud.fallbackTarget({...choice}),null);
+ atPoint={};assert.equal(hud.fallbackTarget(choice),null);atPoint=canvas;
+ hud.show(choice,{best:false});assert.equal(hud.fallbackTarget(choice),null);
+ hud.show({type:'chi',button_index:1,button_count:2},{best:true});assert.equal(hud.fallbackTarget(choice),null);
+ hud.clear();assert.equal(hud.fallbackTarget(choice),null);
+});

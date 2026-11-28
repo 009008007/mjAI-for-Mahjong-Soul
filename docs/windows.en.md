@@ -28,8 +28,14 @@ Choose Default, CallManiac or SuperTurtle under AI style. Intensity ranges from 
 
 ## Troubleshooting
 
-If the HUD is missing, enable the extension in the same Chrome profile, leave the launcher running and refresh the game. If the game state is incomplete, refresh to request recovery or wait for a new round. If the package moves or the Chrome profile changes, reload the extension and use launcher option 2. To apply updated extension files, reload the extension and refresh the game. The HUD displays advice only.
+If the HUD is missing, enable the extension in the same Chrome profile, leave the launcher running and refresh the game. If the game state is incomplete, refresh to request recovery or wait for a new round. If the package moves or the Chrome profile changes, reload the extension and use launcher option 2. To apply updated extension files, reload the extension and refresh the game. Autoplay is optional and disabled by default.
 
 ## Choose or import a model
 
 Choose 1, then select a model by number or press Enter to use the last selection. Choose A to import: drag an ONNX file into the terminal and press Enter. The launcher tests compatibility and stores a copy in `model/imported/`. It preserves existing models and remembers your choice. Select Q to return. Only self-contained compatible Mortal v4 ONNX models are supported.
+
+## Temporary autoplay
+
+Check **Enable autoplay** in the HUD to follow AI decisions; clear it to block all further automated submissions. Normally actions wait randomly for 1–3 seconds. When little time remains, a still-valid highlighted recommendation is sent immediately. If a discard or win is not confirmed in time, the extension uses Chrome’s debugger permission to click the current visible highlight. For discards, it can confirm the selected tile with a second click if the game has not yet sent an operation. The HUD reports confirmation from the game event. Chrome may briefly display a debugging notice. The checkbox stays enabled across manual moves and recoverable errors; a decision is skipped if its game state cannot be verified. A submission already sent cannot be recalled. Keep the game page open and the computer awake.
+
+Compatibility with live Mahjong Soul games still needs verification. Test riichi and multiple chi choices in a computer practice game first.

@@ -75,11 +75,49 @@ impl Worker {
             let event = serde_json::from_value(value)?;
             match self.inference.process(event, is_last) {
                 Ok(Some(mut suggestion)) => {
-                    if let Some((index, count)) = self.last_action.as_ref()
-                        .and_then(highlight::operation)
-                        .and_then(|ops| highlight::button(&ops, self.bridge.seat, suggestion["type"].as_str().unwrap_or(""))) {
-                        suggestion["button_index"] = index.into();
-                        suggestion["button_count"] = count.into();
+                    if let Some(ops) = self.last_action.as_ref().and_then(highlight::operation) {
+                        if ops.seat == u32::from(self.bridge.seat) {
+                            if let Some(hand) = self.inference.current_hand() {
+                                let operations: Vec<_> = ops.operation_list.iter().map(|op| serde_json::json!({
+                                    "type": op.r#type, "combination": op.combination
+                                })).collect();
+                                suggestion["opportunity"] = serde_json::json!({
+                                    "seat": self.bridge.seat,
+                                    "step": self.last_action.as_ref().unwrap().step,
+                                    "source": self.last_action.as_ref().unwrap().name,
+                                    "time_fixed": ops.time_fixed,
+                                    "time_add": ops.time_add,
+                                    "hand": hand,
+                                    "drawn": self.inference.current_draw(),
+                                    "operations": operations
+                                });
+                            }
+                        }
+                        let kind = suggestion["type"].as_str().unwrap_or("").to_owned();
+                        if kind == "chi" {
+                            if let Some(choices) = highlight::chi_choices(&ops, self.bridge.seat) {
+                                let count = suggestion["hand_count"].as_u64().unwrap_or(0) as usize;
+                                if let Some(references) = self.inference.chi_references(&choices, count) {
+                                    suggestion["chi_choices"] = serde_json::json!(choices);
+                                    suggestion["chi_references"] = serde_json::json!(references);
+                                }
+                            }
+                        }
+                        if kind == "reach" && ops.seat == u32::from(self.bridge.seat) {
+                            let mut offered = ops.operation_list.iter().filter(|op| op.r#type == 7);
+                            if let (Some(operation), None) = (offered.next(), offered.next()) {
+                                if let Ok((tile, index, count, drawn)) = self.inference.riichi_discard(&operation.combination) {
+                                    suggestion["riichi_discard"] = tile.into();
+                                    suggestion["riichi_hand_index"] = index.into();
+                                    suggestion["hand_count"] = count.into();
+                                    if let Some(drawn) = drawn { suggestion["drawn_index"] = drawn.into(); }
+                                }
+                            }
+                        }
+                        if let Some((index, count)) = highlight::button(&ops, self.bridge.seat, suggestion["type"].as_str().unwrap_or("")) {
+                            suggestion["button_index"] = index.into();
+                            suggestion["button_count"] = count.into();
+                        }
                     }
                     if suggestion["type"] == "kakan" {
                         if let Some(tile) = suggestion["pai"].as_str() {
@@ -119,6 +157,7 @@ async fn connection(socket: TcpStream, config: Arc<Config>, mut shutdown: tokio:
     let mut worker: Option<Worker> = None;
     let mut selected_style = policy::Style::Default;
     let mut selected_intensity = 1.0_f32;
+    let mut frame_serial: Option<u64> = None;
     if let Some(seat) = config.seat {
         worker = Some(make_worker(seat, config.model.clone()).await?);
     }
@@ -129,6 +168,7 @@ async fn connection(socket: TcpStream, config: Arc<Config>, mut shutdown: tokio:
         };
         match msg {
             Message::Binary(data) => {
+                let serial = frame_serial.take();
                 let Some(mut current) = worker.take() else {
                     ws.send(Message::Text(serde_json::json!({"type":"status","status":"needs_seat"}).to_string().into())).await?;
                     continue;
@@ -139,13 +179,18 @@ async fn connection(socket: TcpStream, config: Arc<Config>, mut shutdown: tokio:
                 }).await?;
                 worker = Some(returned_worker);
                 match result {
-                    Ok(suggestions) => for suggestion in suggestions { ws.send(Message::Text(suggestion.to_string().into())).await?; },
+                    Ok(suggestions) => for mut suggestion in suggestions {
+                        if let Some(serial) = serial { suggestion["frame_serial"] = serial.into(); }
+                        ws.send(Message::Text(suggestion.to_string().into())).await?;
+                    },
                     Err(e) => { eprintln!("connection desynchronized: {e:#}"); ws.send(Message::Text(serde_json::json!({"type":"status","status":"desynchronized","reason":e.to_string()}).to_string().into())).await?; }
                 }
             },
             Message::Text(text) => {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if value["type"] == "policy" {
+                    if value["type"] == "frame_meta" {
+                        frame_serial = value["serial"].as_u64();
+                    } else if value["type"] == "policy" {
                         let revision = value["revision"].as_u64().unwrap_or(0);
                         let style = match value["style"].as_str() {
                             Some("default") => Some(policy::Style::Default),
@@ -278,6 +323,37 @@ mod tests {
         let draw = ActionDealTile { seat:2, ..Default::default() };
         w.process(wire_action(4, "ActionDealTile", &draw)).unwrap();
         assert!(w.bridge.active);
+    }
+
+    #[test]
+    fn chi_recommendation_carries_the_two_matching_hand_positions() {
+        use majsoul_proto::{ActionNewRound, ActionDiscardTile, OptionalOperation, OptionalOperationList};
+        let mut w = Worker { bridge: BridgeState::new(1).unwrap(), inference: Inference::new(1, None).unwrap(), decoder: decoder::Decoder::default(), last_action: None, during_restore: Default::default() };
+        let round = ActionNewRound {
+            tiles:["1m","2m","3m","1p","2p","3p","1s","2s","4s","0s","5s","1z","2z"].map(String::from).to_vec(),
+            doras:vec!["6m".into()], scores:vec![25000; 4], ..Default::default()
+        };
+        w.process(wire_action(0, "ActionNewRound", &round)).unwrap();
+        // 3s allows 123s and 345s. Demo scores tie and select 345s with the red five.
+        let discard = ActionDiscardTile {
+            seat:0, tile:"3s".into(), operation:Some(OptionalOperationList {
+                seat:1, operation_list:vec![OptionalOperation { r#type:2,
+                    combination:["1s|2s", "4s|0s", "4s|5s"].map(String::from).to_vec() }], ..Default::default()
+            }), ..Default::default()
+        };
+        let result = w.process(wire_action(1, "ActionDiscardTile", &discard)).unwrap();
+        let chi = result.iter().find(|entry| entry["type"] == "chi").unwrap();
+        assert_eq!(chi["pai"], "3s");
+        assert_eq!(chi["consumed"], serde_json::json!(["4s", "5sr"]));
+        assert_eq!(chi["chi_hand_indices"], serde_json::json!([8, 9]));
+        assert_eq!(chi["hand_count"], 13);
+        assert_eq!(chi["button_index"], 1);
+        assert_eq!(chi["chi_choices"], serde_json::json!([["1s","2s"],["4s","5sr"],["4s","5s"]]));
+        assert_eq!(chi["chi_references"], serde_json::json!({"1s":6,"2s":7,"4s":8,"5sr":9,"5s":10}));
+        assert_eq!(chi["opportunity"]["step"], 1);
+        assert_eq!(chi["opportunity"]["seat"], 1);
+        assert_eq!(chi["opportunity"]["operations"][0]["combination"], serde_json::json!(["1s|2s","4s|0s","4s|5s"]));
+        assert_eq!(chi["opportunity"]["hand"].as_array().unwrap().len(), 13);
     }
 
     #[test]

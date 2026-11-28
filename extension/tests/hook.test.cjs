@@ -11,12 +11,15 @@ function req(id, name, payload) { return new Uint8Array([2,id&255,id>>8,...field
 function res(id, payload) { return new Uint8Array([3,id&255,id>>8,...field(2,payload)]); }
 function action(name) { return new Uint8Array([1,...field(1,enc.encode('.lq.ActionPrototype')),...field(2,field(2,enc.encode(name)))]); }
 function runtime() {
- const sent=[],messages=[];
- class WS extends EventTarget { send(value) { sent.push(value); } }
+ const sent=[],messages=[],listeners={};
+ class WS extends EventTarget { constructor(){ super(); this.readyState=1; } send(value) { sent.push(value); } }
  const location={origin:'https://game.maj-soul.com'};
- const window={WebSocket:WS, postMessage(data) { messages.push(data); }};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../hook.js'),'utf8'),{window,location,TextEncoder,TextDecoder,Uint8Array,ArrayBuffer,Blob,Promise,Reflect});
- return {window,sent,messages};
+ const window={WebSocket:WS, postMessage(data) { messages.push(data); }, addEventListener(name,fn){listeners[name]=fn;}};
+ const document={documentElement:{getAttribute:()=> 'session-1'}};
+ const context=vm.createContext({window,document,location,TextEncoder,TextDecoder,Uint8Array,ArrayBuffer,Blob,Promise,Reflect});
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../transport.js'),'utf8'),context);
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../hook.js'),'utf8'),context);
+ return {window,sent,messages,listeners,location};
 }
 test('preserves game sends, filters traffic, and correlates restore responses without forwarding credentials', async () => {
  const {window,sent,messages}=runtime(), ws=new window.WebSocket('wss://game.example');
@@ -36,4 +39,33 @@ test('preserves game sends, filters traffic, and correlates restore responses wi
  assert.equal(messages[4].newRound,true);
  assert.ok(!Buffer.from(messages[2].buffer).includes(Buffer.from(secret)));
  assert.ok(!messages.some(x=>x.buffer && Buffer.from(x.buffer).includes(Buffer.from('sensitive-token'))));
+});
+
+test('submits once for the current frame and correlates server response', async () => {
+ const {window,sent,messages,listeners,location}=runtime(), ws=new window.WebSocket('wss://game.example');
+ const round=action('ActionNewRound');
+ ws.dispatchEvent(new MessageEvent('message',{data:round.buffer}));
+ await new Promise(r=>setTimeout(r,10));
+ const submit = serial => listeners.message({source:window,origin:location.origin,data:{
+  channel:'majsoul-auto-v1',kind:'submit',id:'1',serial,timeuse:1300,session:'session-1',
+  action:{method:'inputOperation',type:7,tile:'0s',moqie:false}
+ }});
+ submit(0);
+ assert.equal(messages.at(-1).kind,'auto_send_failed');
+ submit(1);
+ assert.equal(sent.length,1);
+ assert.equal(messages.at(-1).kind,'auto_sent');
+ const requestId=messages.at(-1).requestId;
+ submit(1);
+ assert.equal(sent.length,1);
+ ws.dispatchEvent(new MessageEvent('message',{data:res(requestId,[]).buffer}));
+ await new Promise(r=>setTimeout(r,10));
+ assert.equal(messages.at(-1).kind,'auto_response');
+ assert.equal(messages.at(-1).result.ok,true);
+ const next=action('ActionDiscardTile');
+ ws.dispatchEvent(new MessageEvent('message',{data:next.buffer}));
+ await new Promise(r=>setTimeout(r,10));
+ submit(1);
+ assert.equal(sent.length,1);
+ assert.equal(messages.at(-1).kind,'auto_send_failed');
 });
